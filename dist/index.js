@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FlareEconomy = void 0;
-const flaredb_1 = require("flaredb");
+const Flare = require("flaredb");
 const utils_1 = require("./utils");
 const DAILY_COOLDOWN = 8.64e7;
 class FlareEconomy {
     constructor(dbPath = 'economy.db') {
-        this.db = new flaredb_1.Flare(dbPath);
+        this.db = new Flare(dbPath);
         this.initializeDatabase();
     }
     async initializeDatabase() {
