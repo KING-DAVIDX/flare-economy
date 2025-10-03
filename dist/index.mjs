@@ -1,12 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.FlareEconomy = void 0;
-const flaredb_1 = require("flaredb");
-const utils_1 = require("./utils");
+import { Flare } from 'flaredb';
+import { formatCooldown, isValidAmount, parseAmount } from './utils.js';
+
 const DAILY_COOLDOWN = 8.64e7;
 class FlareEconomy {
     constructor(dbPath = 'economy.db') {
-        this.db = new flaredb_1.Flare(dbPath);
+        this.db = new Flare(dbPath);
         this.initializeDatabase();
     }
     async initializeDatabase() {
@@ -39,9 +37,9 @@ class FlareEconomy {
     async addMoney(userID, amount, platform = 'discord') {
         if (!userID)
             throw new TypeError('Please provide a User ID');
-        if (!(0, utils_1.isValidAmount)(amount))
+        if (!isValidAmount(amount))
             throw new TypeError('Please provide a valid amount');
-        const parsedAmount = (0, utils_1.parseAmount)(amount);
+        const parsedAmount = parseAmount(amount);
         let user = await this.users.findOne({ userID, platform });
         if (!user) {
             user = await this.createUser(userID, platform);
@@ -54,9 +52,9 @@ class FlareEconomy {
     async removeMoney(userID, amount, platform = 'discord') {
         if (!userID)
             throw new TypeError('Please provide a User ID');
-        if (!(0, utils_1.isValidAmount)(amount))
+        if (!isValidAmount(amount))
             throw new TypeError('Please provide a valid amount');
-        const parsedAmount = (0, utils_1.parseAmount)(amount);
+        const parsedAmount = parseAmount(amount);
         let user = await this.users.findOne({ userID, platform });
         if (!user) {
             user = await this.createUser(userID, platform);
@@ -71,9 +69,9 @@ class FlareEconomy {
     async transfer(fromUserID, toUserID, amount, platform = 'discord') {
         if (!fromUserID || !toUserID)
             throw new TypeError('Please provide both sender and receiver User IDs');
-        if (!(0, utils_1.isValidAmount)(amount))
+        if (!isValidAmount(amount))
             throw new TypeError('Please provide a valid amount');
-        const parsedAmount = (0, utils_1.parseAmount)(amount);
+        const parsedAmount = parseAmount(amount);
         if (fromUserID === toUserID) {
             return {
                 success: false,
@@ -111,16 +109,16 @@ class FlareEconomy {
     async daily(userID, amount, platform = 'discord') {
         if (!userID)
             throw new TypeError('Please provide a User ID');
-        if (!(0, utils_1.isValidAmount)(amount))
+        if (!isValidAmount(amount))
             throw new TypeError('Please provide a valid amount');
-        const parsedAmount = (0, utils_1.parseAmount)(amount);
+        const parsedAmount = parseAmount(amount);
         let user = await this.users.findOne({ userID, platform });
         if (!user) {
             user = await this.createUser(userID, platform);
         }
         const cooldown = DAILY_COOLDOWN - (Date.now() - parseInt(user.daily));
         if (cooldown > 0) {
-            const cooldownInfo = (0, utils_1.formatCooldown)(cooldown);
+            const cooldownInfo = formatCooldown(cooldown);
             return {
                 success: false,
                 cooldown: cooldownInfo
@@ -143,11 +141,11 @@ class FlareEconomy {
         if (amount === 'all') {
             depositAmount = user.wallet;
         }
-        else if (!(0, utils_1.isValidAmount)(amount)) {
+        else if (!isValidAmount(amount)) {
             throw new TypeError('Please provide a valid amount');
         }
         else {
-            depositAmount = (0, utils_1.parseAmount)(amount);
+            depositAmount = parseAmount(amount);
         }
         if (depositAmount > user.wallet) {
             depositAmount = user.wallet;
@@ -173,11 +171,11 @@ class FlareEconomy {
         if (amount === 'all') {
             withdrawAmount = user.bank;
         }
-        else if (!(0, utils_1.isValidAmount)(amount)) {
+        else if (!isValidAmount(amount)) {
             throw new TypeError('Please provide a valid amount');
         }
         else {
-            withdrawAmount = (0, utils_1.parseAmount)(amount);
+            withdrawAmount = parseAmount(amount);
         }
         if (withdrawAmount > user.bank) {
             withdrawAmount = user.bank;
@@ -218,9 +216,9 @@ class FlareEconomy {
     async upgradeBank(userID, capacity, platform = 'discord') {
         if (!userID)
             throw new TypeError('Please provide a User ID');
-        if (!(0, utils_1.isValidAmount)(capacity))
+        if (!isValidAmount(capacity))
             throw new TypeError('Please provide a valid capacity amount');
-        const parsedCapacity = (0, utils_1.parseAmount)(capacity);
+        const parsedCapacity = parseAmount(capacity);
         let user = await this.users.findOne({ userID, platform });
         if (!user) {
             user = await this.createUser(userID, platform);
@@ -262,5 +260,5 @@ class FlareEconomy {
         return users.length;
     }
 }
-exports.FlareEconomy = FlareEconomy;
-exports.default = FlareEconomy;
+export { FlareEconomy };
+export default FlareEconomy;
