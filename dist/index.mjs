@@ -1,4 +1,4 @@
-import { Flare } from 'flaredb';
+import Flare from 'flaredb';
 import { formatCooldown, isValidAmount, parseAmount } from './utils.js';
 
 const DAILY_COOLDOWN = 8.64e7;
