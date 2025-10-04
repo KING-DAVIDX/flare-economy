@@ -1,4 +1,4 @@
-import { Flare } from 'flaredb';
+import Flare from 'flaredb';
 
 class FlareEconomy {
     constructor(dbPath = 'economy.db') {
