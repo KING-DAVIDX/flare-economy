@@ -7,7 +7,7 @@ const DAILY_COOLDOWN = 8.64e7;
 class FlareEconomy {
     constructor(dbPath = 'economy.db') {
         this.db = new Flare(dbPath);
-        this.initializeDatabase();
+        this.initialized = this.initializeDatabase();
     }
     async initializeDatabase() {
         const schema = {
@@ -22,7 +22,11 @@ class FlareEconomy {
         };
         this.users = this.db.collection('users', schema);
     }
+    async ensureInitialized() {
+        await this.initialized;
+    }
     async balance(userID, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         let user = await this.users.findOne({ userID, platform });
@@ -37,6 +41,7 @@ class FlareEconomy {
         };
     }
     async addMoney(userID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         if (!(0, utils_1.isValidAmount)(amount))
@@ -52,6 +57,7 @@ class FlareEconomy {
         return { amount: parsedAmount };
     }
     async removeMoney(userID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         if (!(0, utils_1.isValidAmount)(amount))
@@ -69,6 +75,7 @@ class FlareEconomy {
         return { amount: actualAmount };
     }
     async transfer(fromUserID, toUserID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!fromUserID || !toUserID)
             throw new TypeError('Please provide both sender and receiver User IDs');
         if (!(0, utils_1.isValidAmount)(amount))
@@ -109,6 +116,7 @@ class FlareEconomy {
         };
     }
     async daily(userID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         if (!(0, utils_1.isValidAmount)(amount))
@@ -136,6 +144,7 @@ class FlareEconomy {
         };
     }
     async deposit(userID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         const user = await this.users.findOne({ userID, platform }) || await this.createUser(userID, platform);
@@ -166,6 +175,7 @@ class FlareEconomy {
         };
     }
     async withdraw(userID, amount, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         const user = await this.users.findOne({ userID, platform }) || await this.createUser(userID, platform);
@@ -194,6 +204,7 @@ class FlareEconomy {
         };
     }
     async leaderboard(count = 10, platform) {
+        await this.ensureInitialized();
         if (!count || count <= 0)
             throw new TypeError('Please provide a valid count');
         let allUsers = await this.users.find();
@@ -216,6 +227,7 @@ class FlareEconomy {
         }));
     }
     async upgradeBank(userID, capacity, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         if (!(0, utils_1.isValidAmount)(capacity))
@@ -245,6 +257,7 @@ class FlareEconomy {
         return newUser;
     }
     async deleteUser(userID, platform = 'discord') {
+        await this.ensureInitialized();
         if (!userID)
             throw new TypeError('Please provide a User ID');
         const user = await this.users.findOne({ userID, platform });
@@ -255,6 +268,7 @@ class FlareEconomy {
         return { success: false };
     }
     async getUserCount(platform) {
+        await this.ensureInitialized();
         let users = await this.users.find();
         if (platform) {
             users = users.filter((user) => user.platform === platform);
