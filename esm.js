@@ -10,23 +10,73 @@ class FlareEconomy {
         const fullDbPath = path.join(__dirname, dbPath);
         this.db = new Flare(fullDbPath);
         this.users = null;
-        this.dailyCooldown = 8.64e+7;
+        this.dailyCooldown = 8.64e+7; // 24 hours in milliseconds
         this.initialized = false;
+        this.writeQueue = [];
+        this.isProcessing = false;
     }
 
     async initialize() {
         if (this.initialized) return;
         
-        this.users = this.db.collection("users", {
-            userID: "string",
-            platform: "string",
-            wallet: "number",
-            bank: "number",
-            bankCapacity: "number",
-            daily: "string"
-        });
+        try {
+            this.users = this.db.collection("users", {
+                userID: "string",
+                platform: "string",
+                wallet: "number",
+                bank: "number",
+                bankCapacity: "number",
+                daily: "number" // Changed from string to number for consistency
+            });
+            
+            // Verify the collection works
+            await this.users.find({ limit: 1 });
+            this.initialized = true;
+        } catch (error) {
+            console.error('Failed to initialize economy database:', error);
+            throw error;
+        }
+    }
+
+    // Queue processor for write operations
+    async processQueue() {
+        if (this.isProcessing || this.writeQueue.length === 0) return;
         
-        this.initialized = true;
+        this.isProcessing = true;
+        
+        try {
+            const batch = this.writeQueue.splice(0, 10); // Process 10 at a time
+            
+            for (const operation of batch) {
+                try {
+                    await this.users.put(operation.data);
+                } catch (error) {
+                    console.error('Failed to process write operation:', error);
+                    // Re-add failed operation to queue
+                    this.writeQueue.unshift(operation);
+                }
+            }
+        } finally {
+            this.isProcessing = false;
+            if (this.writeQueue.length > 0) {
+                setTimeout(() => this.processQueue(), 50);
+            }
+        }
+    }
+
+    // Safe put operation with queuing
+    async safePut(data) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+        
+        this.writeQueue.push({ data });
+        if (!this.isProcessing) {
+            setTimeout(() => this.processQueue(), 10);
+        }
+        
+        // For immediate operations, wait a bit for processing
+        await new Promise(resolve => setTimeout(resolve, 20));
     }
 
     async balance(userID, platform = 'whatsapp') {
@@ -40,17 +90,17 @@ class FlareEconomy {
         }
 
         return {
-            wallet: user.wallet || 0,
-            bank: user.bank || 0,
-            bankCapacity: user.bankCapacity || 2500,
-            total: (user.wallet || 0) + (user.bank || 0)
+            wallet: Number(user.wallet) || 0,
+            bank: Number(user.bank) || 0,
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            total: (Number(user.wallet) || 0) + (Number(user.bank) || 0)
         };
     }
 
     async addMoney(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an Amount");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an Amount");
         if (isNaN(amount)) throw new TypeError("The amount should be a number");
         if (amount < 0) throw new TypeError("Amount can't be less than zero");
 
@@ -62,25 +112,25 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const currentWallet = user.wallet || 0;
-        const newWallet = currentWallet + parseInt(amount);
+        const currentWallet = Number(user.wallet) || 0;
+        const newWallet = currentWallet + Number(amount);
         
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
             wallet: newWallet,
-            bank: user.bank || 0,
-            bankCapacity: user.bankCapacity || 2500,
-            daily: user.daily || "0"
+            bank: Number(user.bank) || 0,
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            daily: Number(user.daily) || 0
         });
 
-        return { amount, newBalance: newWallet };
+        return { amount: Number(amount), newBalance: newWallet };
     }
 
     async removeMoney(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an Amount");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an Amount");
         if (isNaN(amount)) throw new TypeError("The amount should be a number");
         if (amount < 0) throw new TypeError("Amount can't be less than zero");
 
@@ -92,17 +142,17 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const currentWallet = user.wallet || 0;
-        const actualAmount = Math.min(amount, currentWallet);
+        const currentWallet = Number(user.wallet) || 0;
+        const actualAmount = Math.min(Number(amount), currentWallet);
         const newWallet = currentWallet - actualAmount;
 
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
             wallet: newWallet,
-            bank: user.bank || 0,
-            bankCapacity: user.bankCapacity || 2500,
-            daily: user.daily || "0"
+            bank: Number(user.bank) || 0,
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            daily: Number(user.daily) || 0
         });
 
         return { amount: actualAmount, newBalance: newWallet };
@@ -123,22 +173,22 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
-            wallet: parseInt(wallet),
-            bank: parseInt(bank),
-            bankCapacity: user.bankCapacity || 2500,
-            daily: user.daily || "0"
+            wallet: Number(wallet),
+            bank: Number(bank),
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            daily: Number(user.daily) || 0
         });
 
-        return { wallet: parseInt(wallet), bank: parseInt(bank) };
+        return { wallet: Number(wallet), bank: Number(bank) };
     }
 
     async addBankCapacity(userID, platform, capacity) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!capacity && capacity !== 0) throw new TypeError("Please Provide a Capacity");
+        if (capacity === undefined || capacity === null) throw new TypeError("Please Provide a Capacity");
         if (isNaN(capacity)) throw new TypeError("The capacity should be a number");
         if (capacity < 0) throw new TypeError("Capacity can't be less than zero");
 
@@ -150,16 +200,16 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const currentCapacity = user.bankCapacity || 2500;
-        const newCapacity = currentCapacity + parseInt(capacity);
+        const currentCapacity = Number(user.bankCapacity) || 2500;
+        const newCapacity = currentCapacity + Number(capacity);
 
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
-            wallet: user.wallet || 0,
-            bank: user.bank || 0,
+            wallet: Number(user.wallet) || 0,
+            bank: Number(user.bank) || 0,
             bankCapacity: newCapacity,
-            daily: user.daily || "0"
+            daily: Number(user.daily) || 0
         });
 
         return { capacity: newCapacity };
@@ -178,10 +228,10 @@ class FlareEconomy {
             wallet: 0,
             bank: 0,
             bankCapacity: 2500,
-            daily: "0"
+            daily: 0 // Changed to number
         };
 
-        await this.users.put(newUser);
+        await this.safePut(newUser);
         return newUser;
     }
 
@@ -211,23 +261,30 @@ class FlareEconomy {
             let aValue, bValue;
             
             if (type === 'total') {
-                aValue = (a.wallet || 0) + (a.bank || 0);
-                bValue = (b.wallet || 0) + (b.bank || 0);
+                aValue = (Number(a.wallet) || 0) + (Number(a.bank) || 0);
+                bValue = (Number(b.wallet) || 0) + (Number(b.bank) || 0);
             } else {
-                aValue = a[type] || 0;
-                bValue = b[type] || 0;
+                aValue = Number(a[type]) || 0;
+                bValue = Number(b[type]) || 0;
             }
             
             return bValue - aValue;
         });
 
-        return sortedUsers.slice(0, limit);
+        return sortedUsers.slice(0, limit).map(user => ({
+            userID: user.userID,
+            platform: user.platform,
+            wallet: Number(user.wallet) || 0,
+            bank: Number(user.bank) || 0,
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            total: (Number(user.wallet) || 0) + (Number(user.bank) || 0)
+        }));
     }
 
     async daily(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an amount");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an amount");
         if (isNaN(amount)) throw new TypeError("Amount should be a number");
 
         await this.initialize();
@@ -238,7 +295,7 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const lastDaily = parseInt(user.daily || "0");
+        const lastDaily = Number(user.daily) || 0;
         const cooldown = this.dailyCooldown - (Date.now() - lastDaily);
 
         if (cooldown > 0 && lastDaily !== 0) {
@@ -261,21 +318,21 @@ class FlareEconomy {
             };
         }
 
-        const currentWallet = user.wallet || 0;
-        const newWallet = currentWallet + parseInt(amount);
+        const currentWallet = Number(user.wallet) || 0;
+        const newWallet = currentWallet + Number(amount);
         
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
             wallet: newWallet,
-            bank: user.bank || 0,
-            bankCapacity: user.bankCapacity || 2500,
-            daily: Date.now().toString()
+            bank: Number(user.bank) || 0,
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            daily: Date.now()
         });
 
         return { 
             success: true, 
-            amount, 
+            amount: Number(amount), 
             newBalance: newWallet 
         };
     }
@@ -283,8 +340,8 @@ class FlareEconomy {
     async deposit(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an amount");
-        if (amount < 0) throw new TypeError("Deposit can't be less than zero");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an amount");
+        if (typeof amount === 'number' && amount < 0) throw new TypeError("Deposit can't be less than zero");
 
         await this.initialize();
 
@@ -294,9 +351,9 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const currentWallet = user.wallet || 0;
-        const currentBank = user.bank || 0;
-        const bankCapacity = user.bankCapacity || 2500;
+        const currentWallet = Number(user.wallet) || 0;
+        const currentBank = Number(user.bank) || 0;
+        const bankCapacity = Number(user.bankCapacity) || 2500;
         
         let depositAmount;
         
@@ -304,7 +361,7 @@ class FlareEconomy {
             depositAmount = currentWallet;
         } else {
             if (isNaN(amount)) throw new TypeError("Amount should be a number or 'all'");
-            depositAmount = Math.min(parseInt(amount), currentWallet);
+            depositAmount = Math.min(Number(amount), currentWallet);
         }
 
         const availableSpace = bankCapacity - currentBank;
@@ -317,13 +374,13 @@ class FlareEconomy {
         const newWallet = currentWallet - actualDeposit;
         const newBank = currentBank + actualDeposit;
 
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
             wallet: newWallet,
             bank: newBank,
             bankCapacity: bankCapacity,
-            daily: user.daily || "0"
+            daily: Number(user.daily) || 0
         });
 
         return { 
@@ -337,8 +394,8 @@ class FlareEconomy {
     async withdraw(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an amount");
-        if (amount < 0) throw new TypeError("Withdraw can't be less than zero");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an amount");
+        if (typeof amount === 'number' && amount < 0) throw new TypeError("Withdraw can't be less than zero");
 
         await this.initialize();
 
@@ -348,8 +405,8 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const currentWallet = user.wallet || 0;
-        const currentBank = user.bank || 0;
+        const currentWallet = Number(user.wallet) || 0;
+        const currentBank = Number(user.bank) || 0;
         
         let withdrawAmount;
         
@@ -357,7 +414,7 @@ class FlareEconomy {
             withdrawAmount = currentBank;
         } else {
             if (isNaN(amount)) throw new TypeError("Amount should be a number or 'all'");
-            withdrawAmount = Math.min(parseInt(amount), currentBank);
+            withdrawAmount = Math.min(Number(amount), currentBank);
         }
 
         if (withdrawAmount <= 0) {
@@ -367,13 +424,13 @@ class FlareEconomy {
         const newWallet = currentWallet + withdrawAmount;
         const newBank = currentBank - withdrawAmount;
 
-        await this.users.put({
+        await this.safePut({
             userID,
             platform,
             wallet: newWallet,
             bank: newBank,
-            bankCapacity: user.bankCapacity || 2500,
-            daily: user.daily || "0"
+            bankCapacity: Number(user.bankCapacity) || 2500,
+            daily: Number(user.daily) || 0
         });
 
         return { 
@@ -387,7 +444,7 @@ class FlareEconomy {
     async transfer(fromUserID, toUserID, platform, amount) {
         if (!fromUserID || !toUserID) throw new TypeError("Please Provide both sender and receiver User IDs");
         if (!platform) throw new TypeError("Please Provide a Platform");
-        if (!amount && amount !== 0) throw new TypeError("Please Provide an amount");
+        if (amount === undefined || amount === null) throw new TypeError("Please Provide an amount");
         if (isNaN(amount)) throw new TypeError("Amount should be a number");
         if (amount < 0) throw new TypeError("Amount can't be less than zero");
         if (fromUserID === toUserID) throw new TypeError("Cannot transfer to yourself");
@@ -399,40 +456,59 @@ class FlareEconomy {
         const toUser = await this.users.findOne({ userID: toUserID, platform }) || 
                       await this.create(toUserID, platform);
 
-        const fromWallet = fromUser.wallet || 0;
-        const toWallet = toUser.wallet || 0;
+        const fromWallet = Number(fromUser.wallet) || 0;
+        const toWallet = Number(toUser.wallet) || 0;
 
         if (fromWallet < amount) {
             return { success: false, reason: 'insufficient_funds' };
         }
 
-        const newFromWallet = fromWallet - parseInt(amount);
-        const newToWallet = toWallet + parseInt(amount);
+        const newFromWallet = fromWallet - Number(amount);
+        const newToWallet = toWallet + Number(amount);
 
+        // Use direct put for transfers to ensure atomicity
         await this.users.put({
             userID: fromUserID,
             platform,
             wallet: newFromWallet,
-            bank: fromUser.bank || 0,
-            bankCapacity: fromUser.bankCapacity || 2500,
-            daily: fromUser.daily || "0"
+            bank: Number(fromUser.bank) || 0,
+            bankCapacity: Number(fromUser.bankCapacity) || 2500,
+            daily: Number(fromUser.daily) || 0
         });
 
         await this.users.put({
             userID: toUserID,
             platform,
             wallet: newToWallet,
-            bank: toUser.bank || 0,
-            bankCapacity: toUser.bankCapacity || 2500,
-            daily: toUser.daily || "0"
+            bank: Number(toUser.bank) || 0,
+            bankCapacity: Number(toUser.bankCapacity) || 2500,
+            daily: Number(toUser.daily) || 0
         });
 
         return { 
             success: true, 
-            amount, 
+            amount: Number(amount), 
             fromBalance: newFromWallet, 
             toBalance: newToWallet 
         };
+    }
+
+    // Close database connection
+    async close() {
+        try {
+            // Process any remaining queue items
+            while (this.writeQueue.length > 0) {
+                await this.processQueue();
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            if (this.db && typeof this.db.close === 'function') {
+                await this.db.close();
+            }
+            this.initialized = false;
+        } catch (error) {
+            console.error('Error closing database:', error);
+        }
     }
 }
 
