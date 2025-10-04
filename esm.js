@@ -1,10 +1,16 @@
 import Flare from 'flaredb';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class FlareEconomy {
     constructor(dbPath = 'economy.db') {
-        this.db = new Flare(dbPath);
+        const fullDbPath = path.join(__dirname, dbPath);
+        this.db = new Flare(fullDbPath);
         this.users = null;
-        this.dailyCooldown = 8.64e+7; // 24 hours in milliseconds
+        this.dailyCooldown = 8.64e+7;
         this.initialized = false;
     }
 
@@ -23,12 +29,7 @@ class FlareEconomy {
         this.initialized = true;
     }
 
-    /**
-     * Get user balance
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     */
-    async balance(userID, platform = 'discord') {
+    async balance(userID, platform = 'whatsapp') {
         if (!userID) throw new TypeError("Please Provide a User ID");
         await this.initialize();
 
@@ -39,19 +40,13 @@ class FlareEconomy {
         }
 
         return {
-            wallet: user.wallet,
-            bank: user.bank,
-            bankCapacity: user.bankCapacity,
-            total: user.wallet + user.bank
+            wallet: user.wallet || 0,
+            bank: user.bank || 0,
+            bankCapacity: user.bankCapacity || 2500,
+            total: (user.wallet || 0) + (user.bank || 0)
         };
     }
 
-    /**
-     * Add money to user's wallet
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} amount - Amount to add
-     */
     async addMoney(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -67,18 +62,21 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        user.wallet += parseInt(amount);
-        await this.users.updateOne({ userID, platform }, { wallet: user.wallet });
+        const currentWallet = user.wallet || 0;
+        const newWallet = currentWallet + parseInt(amount);
+        
+        await this.users.put({
+            userID,
+            platform,
+            wallet: newWallet,
+            bank: user.bank || 0,
+            bankCapacity: user.bankCapacity || 2500,
+            daily: user.daily || "0"
+        });
 
-        return { amount, newBalance: user.wallet };
+        return { amount, newBalance: newWallet };
     }
 
-    /**
-     * Remove money from user's wallet
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} amount - Amount to remove
-     */
     async removeMoney(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -94,20 +92,22 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const actualAmount = Math.min(amount, user.wallet);
-        user.wallet -= actualAmount;
-        await this.users.updateOne({ userID, platform }, { wallet: user.wallet });
+        const currentWallet = user.wallet || 0;
+        const actualAmount = Math.min(amount, currentWallet);
+        const newWallet = currentWallet - actualAmount;
 
-        return { amount: actualAmount, newBalance: user.wallet };
+        await this.users.put({
+            userID,
+            platform,
+            wallet: newWallet,
+            bank: user.bank || 0,
+            bankCapacity: user.bankCapacity || 2500,
+            daily: user.daily || "0"
+        });
+
+        return { amount: actualAmount, newBalance: newWallet };
     }
 
-    /**
-     * Set user's money
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} wallet - Wallet amount
-     * @param {number} bank - Bank amount
-     */
     async setMoney(userID, platform, wallet, bank) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -123,22 +123,18 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        user.wallet = parseInt(wallet);
-        user.bank = parseInt(bank);
-        await this.users.updateOne({ userID, platform }, { 
-            wallet: user.wallet, 
-            bank: user.bank 
+        await this.users.put({
+            userID,
+            platform,
+            wallet: parseInt(wallet),
+            bank: parseInt(bank),
+            bankCapacity: user.bankCapacity || 2500,
+            daily: user.daily || "0"
         });
 
-        return { wallet: user.wallet, bank: user.bank };
+        return { wallet: parseInt(wallet), bank: parseInt(bank) };
     }
 
-    /**
-     * Increase bank capacity
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} capacity - Capacity to add
-     */
     async addBankCapacity(userID, platform, capacity) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -154,18 +150,22 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        user.bankCapacity += parseInt(capacity);
-        await this.users.updateOne({ userID, platform }, { bankCapacity: user.bankCapacity });
+        const currentCapacity = user.bankCapacity || 2500;
+        const newCapacity = currentCapacity + parseInt(capacity);
 
-        return { capacity: user.bankCapacity };
+        await this.users.put({
+            userID,
+            platform,
+            wallet: user.wallet || 0,
+            bank: user.bank || 0,
+            bankCapacity: newCapacity,
+            daily: user.daily || "0"
+        });
+
+        return { capacity: newCapacity };
     }
 
-    /**
-     * Create a new user
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     */
-    async create(userID, platform = 'discord') {
+    async create(userID, platform = 'whatsapp') {
         if (!userID) throw new TypeError("Please Provide a User ID");
         await this.initialize();
 
@@ -185,12 +185,7 @@ class FlareEconomy {
         return newUser;
     }
 
-    /**
-     * Delete a user
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     */
-    async delete(userID, platform = 'discord') {
+    async delete(userID, platform = 'whatsapp') {
         if (!userID) throw new TypeError("Please Provide a User ID");
         await this.initialize();
 
@@ -201,13 +196,7 @@ class FlareEconomy {
         return { deleted: true };
     }
 
-    /**
-     * Get leaderboard
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} limit - Number of users to return
-     * @param {string} type - Type of balance (wallet/bank/total)
-     */
-    async leaderboard(platform = 'discord', limit = 10, type = 'total') {
+    async leaderboard(platform = 'whatsapp', limit = 10, type = 'total') {
         if (!platform) throw new TypeError("Please Provide a Platform");
         if (isNaN(limit)) throw new TypeError("Limit must be a number");
         if (!['wallet', 'bank', 'total'].includes(type)) {
@@ -218,16 +207,15 @@ class FlareEconomy {
 
         const allUsers = await this.users.find({ platform });
         
-        // Sort based on type
         const sortedUsers = allUsers.sort((a, b) => {
             let aValue, bValue;
             
             if (type === 'total') {
-                aValue = a.wallet + a.bank;
-                bValue = b.wallet + b.bank;
+                aValue = (a.wallet || 0) + (a.bank || 0);
+                bValue = (b.wallet || 0) + (b.bank || 0);
             } else {
-                aValue = a[type];
-                bValue = b[type];
+                aValue = a[type] || 0;
+                bValue = b[type] || 0;
             }
             
             return bValue - aValue;
@@ -236,12 +224,6 @@ class FlareEconomy {
         return sortedUsers.slice(0, limit);
     }
 
-    /**
-     * Daily reward
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} amount - Daily reward amount
-     */
     async daily(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -256,11 +238,10 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
-        const lastDaily = parseInt(user.daily);
+        const lastDaily = parseInt(user.daily || "0");
         const cooldown = this.dailyCooldown - (Date.now() - lastDaily);
 
         if (cooldown > 0 && lastDaily !== 0) {
-            // Still on cooldown
             const seconds = Math.floor(cooldown / 1000);
             const minutes = Math.floor(seconds / 60);
             const hours = Math.floor(minutes / 60);
@@ -280,27 +261,25 @@ class FlareEconomy {
             };
         }
 
-        // Give daily reward
-        user.wallet += parseInt(amount);
-        user.daily = Date.now().toString();
-        await this.users.updateOne({ userID, platform }, { 
-            wallet: user.wallet, 
-            daily: user.daily 
+        const currentWallet = user.wallet || 0;
+        const newWallet = currentWallet + parseInt(amount);
+        
+        await this.users.put({
+            userID,
+            platform,
+            wallet: newWallet,
+            bank: user.bank || 0,
+            bankCapacity: user.bankCapacity || 2500,
+            daily: Date.now().toString()
         });
 
         return { 
             success: true, 
             amount, 
-            newBalance: user.wallet 
+            newBalance: newWallet 
         };
     }
 
-    /**
-     * Deposit money to bank
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number|string} amount - Amount to deposit ('all' or number)
-     */
     async deposit(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -315,45 +294,46 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
+        const currentWallet = user.wallet || 0;
+        const currentBank = user.bank || 0;
+        const bankCapacity = user.bankCapacity || 2500;
+        
         let depositAmount;
         
         if (amount === 'all') {
-            depositAmount = user.wallet;
+            depositAmount = currentWallet;
         } else {
             if (isNaN(amount)) throw new TypeError("Amount should be a number or 'all'");
-            depositAmount = Math.min(parseInt(amount), user.wallet);
+            depositAmount = Math.min(parseInt(amount), currentWallet);
         }
 
-        // Check bank capacity
-        const availableSpace = user.bankCapacity - user.bank;
+        const availableSpace = bankCapacity - currentBank;
         const actualDeposit = Math.min(depositAmount, availableSpace);
 
         if (actualDeposit <= 0) {
             return { success: false, reason: 'bank_full' };
         }
 
-        user.wallet -= actualDeposit;
-        user.bank += actualDeposit;
+        const newWallet = currentWallet - actualDeposit;
+        const newBank = currentBank + actualDeposit;
 
-        await this.users.updateOne({ userID, platform }, { 
-            wallet: user.wallet, 
-            bank: user.bank 
+        await this.users.put({
+            userID,
+            platform,
+            wallet: newWallet,
+            bank: newBank,
+            bankCapacity: bankCapacity,
+            daily: user.daily || "0"
         });
 
         return { 
             success: true, 
             amount: actualDeposit, 
-            wallet: user.wallet, 
-            bank: user.bank 
+            wallet: newWallet, 
+            bank: newBank 
         };
     }
 
-    /**
-     * Withdraw money from bank
-     * @param {string} userID - User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number|string} amount - Amount to withdraw ('all' or number)
-     */
     async withdraw(userID, platform, amount) {
         if (!userID) throw new TypeError("Please Provide a User ID");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -368,42 +348,42 @@ class FlareEconomy {
             user = await this.create(userID, platform);
         }
 
+        const currentWallet = user.wallet || 0;
+        const currentBank = user.bank || 0;
+        
         let withdrawAmount;
         
         if (amount === 'all') {
-            withdrawAmount = user.bank;
+            withdrawAmount = currentBank;
         } else {
             if (isNaN(amount)) throw new TypeError("Amount should be a number or 'all'");
-            withdrawAmount = Math.min(parseInt(amount), user.bank);
+            withdrawAmount = Math.min(parseInt(amount), currentBank);
         }
 
         if (withdrawAmount <= 0) {
             return { success: false, reason: 'insufficient_bank' };
         }
 
-        user.wallet += withdrawAmount;
-        user.bank -= withdrawAmount;
+        const newWallet = currentWallet + withdrawAmount;
+        const newBank = currentBank - withdrawAmount;
 
-        await this.users.updateOne({ userID, platform }, { 
-            wallet: user.wallet, 
-            bank: user.bank 
+        await this.users.put({
+            userID,
+            platform,
+            wallet: newWallet,
+            bank: newBank,
+            bankCapacity: user.bankCapacity || 2500,
+            daily: user.daily || "0"
         });
 
         return { 
             success: true, 
             amount: withdrawAmount, 
-            wallet: user.wallet, 
-            bank: user.bank 
+            wallet: newWallet, 
+            bank: newBank 
         };
     }
 
-    /**
-     * Transfer money between users
-     * @param {string} fromUserID - Sender User ID
-     * @param {string} toUserID - Receiver User ID
-     * @param {string} platform - Platform (discord/whatsapp)
-     * @param {number} amount - Amount to transfer
-     */
     async transfer(fromUserID, toUserID, platform, amount) {
         if (!fromUserID || !toUserID) throw new TypeError("Please Provide both sender and receiver User IDs");
         if (!platform) throw new TypeError("Please Provide a Platform");
@@ -419,21 +399,39 @@ class FlareEconomy {
         const toUser = await this.users.findOne({ userID: toUserID, platform }) || 
                       await this.create(toUserID, platform);
 
-        if (fromUser.wallet < amount) {
+        const fromWallet = fromUser.wallet || 0;
+        const toWallet = toUser.wallet || 0;
+
+        if (fromWallet < amount) {
             return { success: false, reason: 'insufficient_funds' };
         }
 
-        fromUser.wallet -= parseInt(amount);
-        toUser.wallet += parseInt(amount);
+        const newFromWallet = fromWallet - parseInt(amount);
+        const newToWallet = toWallet + parseInt(amount);
 
-        await this.users.updateOne({ userID: fromUserID, platform }, { wallet: fromUser.wallet });
-        await this.users.updateOne({ userID: toUserID, platform }, { wallet: toUser.wallet });
+        await this.users.put({
+            userID: fromUserID,
+            platform,
+            wallet: newFromWallet,
+            bank: fromUser.bank || 0,
+            bankCapacity: fromUser.bankCapacity || 2500,
+            daily: fromUser.daily || "0"
+        });
+
+        await this.users.put({
+            userID: toUserID,
+            platform,
+            wallet: newToWallet,
+            bank: toUser.bank || 0,
+            bankCapacity: toUser.bankCapacity || 2500,
+            daily: toUser.daily || "0"
+        });
 
         return { 
             success: true, 
             amount, 
-            fromBalance: fromUser.wallet, 
-            toBalance: toUser.wallet 
+            fromBalance: newFromWallet, 
+            toBalance: newToWallet 
         };
     }
 }
