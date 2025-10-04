@@ -1,40 +1,17 @@
 {
   "name": "flare-economy",
   "version": "1.0.0",
-  "description": "A FlareDB-based economy system for WhatsApp and Discord bots",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/types.d.ts",
+  "description": "A cross-platform economy system for Discord and WhatsApp bots using FlareDB",
+  "main": "index.js",
+  "module": "esm.js",
   "exports": {
-    ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs",
-      "types": "./dist/types.d.ts"
-    }
+    "require": "./index.js",
+    "import": "./esm.js"
   },
-  "scripts": {
-    "build": "tsc && node scripts/build-esm.js",
-    "prepublishOnly": "npm run build"
-  },
-  "keywords": [
-    "economy",
-    "flaredb",
-    "whatsapp",
-    "discord",
-    "bot",
-    "database"
-  ],
+  "keywords": ["economy", "discord", "whatsapp", "flaredb", "bot"],
   "author": "KING DAVID",
   "license": "MIT",
   "dependencies": {
     "flaredb": "github:codetheearth/flaredb"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ]
+  }
 }

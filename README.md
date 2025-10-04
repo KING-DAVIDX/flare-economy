@@ -5,9 +5,11 @@ A robust FlareDB-based economy system for WhatsApp and Discord bots. Provides a 
 ## Features
 
 - 🏦 **Easy Balance Management** - Get, set, add, and subtract user balances
-- 💰 **Transaction System** - Track all economic activities with timestamps
-- 🔒 **TypeSafe** - Built with TypeScript for better development experience
-- 📊 **Multiple Module Support** - Works with both CommonJS and ES modules
+- 💰 **Bank System** - Wallet and bank balance with capacity management
+- 📊 **Leaderboard** - Track top users by wallet, bank, or total balance
+- 🔄 **Transaction System** - Deposit, withdraw, and transfer between users
+- 🎁 **Daily Rewards** - Cooldown-based daily reward system
+- 🌐 **Multi-Platform** - Support for Discord, WhatsApp, and other platforms
 - 🚀 **High Performance** - Powered by FlareDB for fast data operations
 - ⚡ **Simple API** - Easy to integrate with existing bot frameworks
 
@@ -19,103 +21,125 @@ npm install flare-economy
 
 ## Quick Start
 
-```typescript
-import { FlareEconomy } from 'flare-economy';
+```javascript
+const FlareEconomy = require('flare-economy');
 
 // Initialize the economy system
-const economy = new FlareEconomy('./economy.db', {
-  defaultBalance: 1000,
-  currency: 'coins'
-});
-
-// Create a user
-const user = await economy.createUser('user123');
-
-// Add money to user
-await economy.addMoney('user123', 500, 'daily reward');
+const economy = new FlareEconomy('economy.db');
 
 // Get user balance
-const balance = await economy.getBalance('user123');
-console.log(`User balance: ${balance} coins`);
+const balance = await economy.balance('user123', 'discord');
+console.log(`Wallet: ${balance.wallet}, Bank: ${balance.bank}, Total: ${balance.total}`);
 
-// Transfer money between users
-await economy.transfer('user123', 'user456', 200, 'gift');
+// Add money to user
+await economy.addMoney('user123', 'discord', 500);
+
+// Daily reward
+const daily = await economy.daily('user123', 'discord', 100);
+if (daily.success) {
+    console.log(`Received ${daily.amount} coins! New balance: ${daily.newBalance}`);
+} else {
+    console.log(`Cooldown: ${daily.timeLeft}`);
+}
 ```
 
 ## API Reference
 
 ### Constructor
 
-```typescript
-new FlareEconomy(dbPath: string, options?: Partial<EconomyOptions>)
+```javascript
+new FlareEconomy(dbPath?: string)
 ```
 
 **Parameters:**
-- `dbPath`: Path to the FlareDB database file
-- `options`: Configuration options (optional)
-  - `defaultBalance`: Starting balance for new users (default: 1000)
-  - `currency`: Currency name (default: 'coins')
+- `dbPath`: Path to the FlareDB database file (default: 'economy.db')
 
 ### Core Methods
 
-#### `getUser(userId: string): Promise<EconomyUser | null>`
-Retrieve user data by ID.
+#### `balance(userID: string, platform?: string): Promise<Balance>`
+Get user's wallet, bank, and total balance.
 
-#### `createUser(userId: string, initialBalance?: number): Promise<EconomyUser>`
-Create a new user with optional initial balance.
+#### `addMoney(userID: string, platform: string, amount: number): Promise<TransactionResult>`
+Add money to user's wallet.
 
-#### `getBalance(userId: string): Promise<number>`
-Get user's current balance.
+#### `removeMoney(userID: string, platform: string, amount: number): Promise<TransactionResult>`
+Remove money from user's wallet.
 
-#### `addMoney(userId: string, amount: number, reason?: string): Promise<Transaction>`
-Add money to user's balance.
+#### `setMoney(userID: string, platform: string, wallet: number, bank: number): Promise<SetMoneyResult>`
+Set user's wallet and bank amounts.
 
-#### `subtractMoney(userId: string, amount: number, reason?: string): Promise<Transaction>`
-Subtract money from user's balance.
+#### `deposit(userID: string, platform: string, amount: number | 'all'): Promise<DepositResult>`
+Deposit money from wallet to bank.
 
-#### `setBalance(userId: string, amount: number, reason?: string): Promise<Transaction>`
-Set user's balance to specific amount.
+#### `withdraw(userID: string, platform: string, amount: number | 'all'): Promise<WithdrawResult>`
+Withdraw money from bank to wallet.
 
-#### `transfer(fromUserId: string, toUserId: string, amount: number, reason?: string): Promise<Transaction[]>`
-Transfer money between two users.
+#### `transfer(fromUserID: string, toUserID: string, platform: string, amount: number): Promise<TransferResult>`
+Transfer money between users.
 
-#### `getTransactionHistory(userId: string, limit?: number): Promise<Transaction[]>`
-Get user's transaction history.
+#### `daily(userID: string, platform: string, amount: number): Promise<DailyResult>`
+Claim daily reward with cooldown.
+
+#### `leaderboard(platform?: string, limit?: number, type?: string): Promise<User[]>`
+Get leaderboard sorted by wallet, bank, or total balance.
+
+#### `create(userID: string, platform?: string): Promise<User>`
+Create a new user account.
+
+#### `delete(userID: string, platform?: string): Promise<DeleteResult>`
+Delete a user account.
+
+#### `addBankCapacity(userID: string, platform: string, capacity: number): Promise<CapacityResult>`
+Increase user's bank capacity.
 
 ## Examples
 
 ### Discord Bot Integration
 
-```typescript
-import { Client, GatewayIntentBits } from 'discord.js';
-import { FlareEconomy } from 'flare-economy';
+```javascript
+const { Client, GatewayIntentBits } = require('discord.js');
+const FlareEconomy = require('flare-economy');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const economy = new FlareEconomy('./economy.db');
+const economy = new FlareEconomy();
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'balance') {
-    const balance = await economy.getBalance(interaction.user.id);
-    await interaction.reply(`Your balance: ${balance} coins`);
+    const balance = await economy.balance(interaction.user.id, 'discord');
+    await interaction.reply(`Wallet: ${balance.wallet} | Bank: ${balance.bank}/${balance.bankCapacity} | Total: ${balance.total}`);
   }
 
   if (interaction.commandName === 'daily') {
-    const transaction = await economy.addMoney(interaction.user.id, 100, 'daily reward');
-    await interaction.reply(`You received 100 coins! New balance: ${transaction.newBalance}`);
+    const daily = await economy.daily(interaction.user.id, 'discord', 100);
+    if (daily.success) {
+      await interaction.reply(`You received 100 coins! New balance: ${daily.newBalance}`);
+    } else {
+      await interaction.reply(`Please wait ${daily.timeLeft} before claiming your next daily reward.`);
+    }
+  }
+
+  if (interaction.commandName === 'deposit') {
+    const amount = interaction.options.getInteger('amount');
+    const result = await economy.deposit(interaction.user.id, 'discord', amount);
+    if (result.success) {
+      await interaction.reply(`Deposited ${result.amount} coins! Wallet: ${result.wallet} | Bank: ${result.bank}`);
+    } else {
+      await interaction.reply('Your bank is full!');
+    }
   }
 });
 ```
 
 ### WhatsApp Bot Integration
 
-```typescript
-import { makeWASocket } from 'baileys';
-import { FlareEconomy } from 'flare-economy';
+```javascript
+const { makeWASocket } = require('@whiskeysockets/baileys');
+const FlareEconomy = require('flare-economy');
 
 const sock = makeWASocket({});
-const economy = new FlareEconomy('./economy.db');
+const economy = new FlareEconomy();
 
 sock.ev.on('messages.upsert', async ({ messages }) => {
   const message = messages[0];
@@ -123,37 +147,82 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
   const sender = message.key.remoteJid;
 
   if (text === '!balance') {
-    const balance = await economy.getBalance(sender);
-    await sock.sendMessage(sender, { text: `Your balance: ${balance} coins` });
+    const balance = await economy.balance(sender, 'whatsapp');
+    await sock.sendMessage(sender, { 
+      text: `💵 *Balance*\nWallet: ${balance.wallet}\nBank: ${balance.bank}/${balance.bankCapacity}\nTotal: ${balance.total}` 
+    });
+  }
+
+  if (text === '!daily') {
+    const daily = await economy.daily(sender, 'whatsapp', 100);
+    if (daily.success) {
+      await sock.sendMessage(sender, { 
+        text: `🎁 You received 100 coins!\nNew balance: ${daily.newBalance}` 
+      });
+    } else {
+      await sock.sendMessage(sender, { 
+        text: `⏰ Please wait ${daily.timeLeft} before your next daily reward.` 
+      });
+    }
   }
 });
 ```
 
-## Database Schema
-
-The system uses the following data structure:
+## Data Structures
 
 ### User Object
-```typescript
-interface EconomyUser {
-  id: string;
-  balance: number;
-  createdAt: Date;
-  updatedAt: Date;
+```javascript
+{
+  userID: string,
+  platform: string,
+  wallet: number,
+  bank: number,
+  bankCapacity: number,
+  daily: string // timestamp of last daily claim
 }
 ```
 
-### Transaction Object
-```typescript
-interface Transaction {
-  id: string;
-  userId: string;
-  type: 'add' | 'subtract' | 'transfer';
-  amount: number;
-  balanceBefore: number;
-  newBalance: number;
-  reason?: string;
-  timestamp: Date;
+### Balance Object
+```javascript
+{
+  wallet: number,
+  bank: number,
+  bankCapacity: number,
+  total: number
+}
+```
+
+### Daily Result
+```javascript
+{
+  success: boolean,
+  cooldown?: boolean,
+  timeLeft?: string,
+  hours?: number,
+  minutes?: number,
+  seconds?: number,
+  amount?: number,
+  newBalance?: number
+}
+```
+
+### Transaction Result
+```javascript
+{
+  amount: number,
+  newBalance: number
+}
+```
+
+## Error Handling
+
+All methods include comprehensive error checking and will throw TypeErrors for invalid parameters:
+
+```javascript
+try {
+  await economy.addMoney('user123', 'discord', -50);
+} catch (error) {
+  console.error(error.message); // "Amount can't be less than zero"
 }
 ```
 
@@ -166,9 +235,6 @@ cd flare-economy
 
 # Install dependencies
 npm install
-
-# Build the project
-npm run build
 
 # For production
 npm run prepublishOnly
