@@ -12,6 +12,7 @@ A robust FlareDB-based economy system for WhatsApp and Discord bots. Provides a 
 - 🌐 **Multi-Platform** - Support for Discord, WhatsApp, and other platforms
 - 🚀 **High Performance** - Powered by FlareDB for fast data operations
 - ⚡ **Simple API** - Easy to integrate with existing bot frameworks
+- 📦 **Dual Module Support** - Both ESM and CommonJS compatibility
 
 ## Installation
 
@@ -21,25 +22,49 @@ npm install flare-economy
 
 ## Quick Start
 
+### ESM (ECMAScript Modules)
 ```javascript
-const FlareEconomy = require('flare-economy');
+import FlareEconomy from 'flare-economy';
 
 // Initialize the economy system
-const economy = new FlareEconomy('economy.db');
+const economy = new FlareEconomy({ dbPath: 'economy.db' });
 
 // Get user balance
 const balance = await economy.balance('user123', 'discord');
 console.log(`Wallet: ${balance.wallet}, Bank: ${balance.bank}, Total: ${balance.total}`);
 
 // Add money to user
-await economy.addMoney('user123', 'discord', 500);
+await economy.give('user123', 'discord', 500);
 
 // Daily reward
 const daily = await economy.daily('user123', 'discord', 100);
 if (daily.success) {
     console.log(`Received ${daily.amount} coins! New balance: ${daily.newBalance}`);
 } else {
-    console.log(`Cooldown: ${daily.timeLeft}`);
+    console.log(`Cooldown: ${daily.readableTime}`);
+}
+```
+
+### CommonJS
+```javascript
+const FlareEconomy = require('flare-economy');
+
+// Initialize the economy system
+const economy = new FlareEconomy({ dbPath: 'economy.db' });
+
+// Get user balance
+const balance = await economy.balance('user123', 'discord');
+console.log(`Wallet: ${balance.wallet}, Bank: ${balance.bank}, Total: ${balance.total}`);
+
+// Add money to user
+await economy.give('user123', 'discord', 500);
+
+// Daily reward
+const daily = await economy.daily('user123', 'discord', 100);
+if (daily.success) {
+    console.log(`Received ${daily.amount} coins! New balance: ${daily.newBalance}`);
+} else {
+    console.log(`Cooldown: ${daily.readableTime}`);
 }
 ```
 
@@ -48,25 +73,30 @@ if (daily.success) {
 ### Constructor
 
 ```javascript
-new FlareEconomy(dbPath?: string)
+new FlareEconomy(options?: object)
 ```
 
 **Parameters:**
-- `dbPath`: Path to the FlareDB database file (default: 'economy.db')
+- `options.dbPath`: Path to the FlareDB database file (default: 'economy.db')
+- `options.dailyCooldown`: Daily reward cooldown in milliseconds (default: 24 hours)
+- `options.defaultBankCapacity`: Default bank capacity for new users (default: 2500)
 
 ### Core Methods
 
 #### `balance(userID: string, platform?: string): Promise<Balance>`
 Get user's wallet, bank, and total balance.
 
-#### `addMoney(userID: string, platform: string, amount: number): Promise<TransactionResult>`
+#### `give(userID: string, platform: string, amount: number): Promise<TransactionResult>`
 Add money to user's wallet.
 
-#### `removeMoney(userID: string, platform: string, amount: number): Promise<TransactionResult>`
+#### `deduct(userID: string, platform: string, amount: number): Promise<TransactionResult>`
 Remove money from user's wallet.
 
-#### `setMoney(userID: string, platform: string, wallet: number, bank: number): Promise<SetMoneyResult>`
-Set user's wallet and bank amounts.
+#### `setBankCapacity(userID: string, platform: string, capacity: number): Promise<CapacityResult>`
+Set user's bank capacity.
+
+#### `increaseBankCapacity(userID: string, platform: string, amount: number): Promise<CapacityResult>`
+Increase user's bank capacity.
 
 #### `deposit(userID: string, platform: string, amount: number | 'all'): Promise<DepositResult>`
 Deposit money from wallet to bank.
@@ -74,31 +104,26 @@ Deposit money from wallet to bank.
 #### `withdraw(userID: string, platform: string, amount: number | 'all'): Promise<WithdrawResult>`
 Withdraw money from bank to wallet.
 
-#### `transfer(fromUserID: string, toUserID: string, platform: string, amount: number): Promise<TransferResult>`
-Transfer money between users.
-
 #### `daily(userID: string, platform: string, amount: number): Promise<DailyResult>`
 Claim daily reward with cooldown.
 
-#### `leaderboard(platform?: string, limit?: number, type?: string): Promise<User[]>`
+#### `leaderboard(count?: number, platform?: string, sortBy?: string): Promise<User[]>`
 Get leaderboard sorted by wallet, bank, or total balance.
 
-#### `create(userID: string, platform?: string): Promise<User>`
+#### `create(userID: string, platform?: string): Promise<CreateResult>`
 Create a new user account.
 
 #### `delete(userID: string, platform?: string): Promise<DeleteResult>`
 Delete a user account.
 
-#### `addBankCapacity(userID: string, platform: string, capacity: number): Promise<CapacityResult>`
-Increase user's bank capacity.
-
 ## Examples
 
 ### Discord Bot Integration
 
+#### ESM
 ```javascript
-const { Client, GatewayIntentBits } = require('discord.js');
-const FlareEconomy = require('flare-economy');
+import { Client, GatewayIntentBits } from 'discord.js';
+import FlareEconomy from 'flare-economy';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const economy = new FlareEconomy();
@@ -116,7 +141,7 @@ client.on('interactionCreate', async (interaction) => {
     if (daily.success) {
       await interaction.reply(`You received 100 coins! New balance: ${daily.newBalance}`);
     } else {
-      await interaction.reply(`Please wait ${daily.timeLeft} before claiming your next daily reward.`);
+      await interaction.reply(`Please wait ${daily.readableTime} before claiming your next daily reward.`);
     }
   }
 
@@ -124,19 +149,38 @@ client.on('interactionCreate', async (interaction) => {
     const amount = interaction.options.getInteger('amount');
     const result = await economy.deposit(interaction.user.id, 'discord', amount);
     if (result.success) {
-      await interaction.reply(`Deposited ${result.amount} coins! Wallet: ${result.wallet} | Bank: ${result.bank}`);
+      await interaction.reply(`Deposited ${result.amount} coins! Wallet: ${result.newWallet} | Bank: ${result.newBank}`);
     } else {
-      await interaction.reply('Your bank is full!');
+      await interaction.reply('Your bank is full or you have no funds!');
     }
+  }
+
+  if (interaction.commandName === 'give') {
+    const targetUser = interaction.options.getUser('user');
+    const amount = interaction.options.getInteger('amount');
+    const result = await economy.give(targetUser.id, 'discord', amount);
+    await interaction.reply(`Gave ${amount} coins to ${targetUser.username}! Their new balance: ${result.newBalance}`);
   }
 });
 ```
 
+#### CommonJS
+```javascript
+const { Client, GatewayIntentBits } = require('discord.js');
+const FlareEconomy = require('flare-economy');
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const economy = new FlareEconomy();
+
+// Same implementation as ESM version...
+```
+
 ### WhatsApp Bot Integration
 
+#### ESM
 ```javascript
-const { makeWASocket } = require('@whiskeysockets/baileys');
-const FlareEconomy = require('flare-economy');
+import { makeWASocket } from '@whiskeysockets/baileys';
+import FlareEconomy from 'flare-economy';
 
 const sock = makeWASocket({});
 const economy = new FlareEconomy();
@@ -161,11 +205,47 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
       });
     } else {
       await sock.sendMessage(sender, { 
-        text: `⏰ Please wait ${daily.timeLeft} before your next daily reward.` 
+        text: `⏰ Please wait ${daily.readableTime} before your next daily reward.` 
+      });
+    }
+  }
+
+  if (text.startsWith('!deposit')) {
+    const amount = text.split(' ')[1] || 'all';
+    const result = await economy.deposit(sender, 'whatsapp', amount === 'all' ? 'all' : parseInt(amount));
+    if (result.success) {
+      await sock.sendMessage(sender, { 
+        text: `🏦 Deposited ${result.amount} coins!\nWallet: ${result.newWallet} | Bank: ${result.newBank}` 
+      });
+    } else {
+      await sock.sendMessage(sender, { 
+        text: `❌ Cannot deposit. Check if you have funds or bank space.` 
+      });
+    }
+  }
+
+  if (text.startsWith('!give')) {
+    const [_, target, amountStr] = text.split(' ');
+    const amount = parseInt(amountStr);
+    if (target && amount) {
+      const result = await economy.give(target, 'whatsapp', amount);
+      await sock.sendMessage(sender, { 
+        text: `🎁 Gave ${amount} coins to ${target}!\nTheir new balance: ${result.newBalance}` 
       });
     }
   }
 });
+```
+
+#### CommonJS
+```javascript
+const { makeWASocket } = require('@whiskeysockets/baileys');
+const FlareEconomy = require('flare-economy');
+
+const sock = makeWASocket({});
+const economy = new FlareEconomy();
+
+// Same implementation as ESM version...
 ```
 
 ## Data Structures
@@ -178,7 +258,7 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
   wallet: number,
   bank: number,
   bankCapacity: number,
-  daily: string // timestamp of last daily claim
+  lastDaily: number // timestamp of last daily claim
 }
 ```
 
@@ -197,10 +277,8 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
 {
   success: boolean,
   cooldown?: boolean,
-  timeLeft?: string,
-  hours?: number,
-  minutes?: number,
-  seconds?: number,
+  remainingTime?: number,
+  readableTime?: string,
   amount?: number,
   newBalance?: number
 }
@@ -214,15 +292,32 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
 }
 ```
 
+### Deposit/Withdraw Result
+```javascript
+{
+  success: boolean,
+  amount: number,
+  newWallet: number,
+  newBank: number,
+  reason?: string
+}
+```
+
 ## Error Handling
 
 All methods include comprehensive error checking and will throw TypeErrors for invalid parameters:
 
 ```javascript
 try {
-  await economy.addMoney('user123', 'discord', -50);
+  await economy.give('user123', 'discord', -50);
 } catch (error) {
   console.error(error.message); // "Amount can't be less than zero"
+}
+
+try {
+  await economy.deposit('user123', 'discord', 'invalid');
+} catch (error) {
+  console.error(error.message); // "The amount should be a number or 'all'"
 }
 ```
 
@@ -239,6 +334,15 @@ npm install
 # For production
 npm run prepublishOnly
 ```
+
+## Module Support
+
+Flare Economy supports both ESM and CommonJS modules:
+
+- **ESM**: Use `import FlareEconomy from 'flare-economy'`
+- **CommonJS**: Use `const FlareEconomy = require('flare-economy')`
+
+The package automatically detects your environment and provides the appropriate module format.
 
 ## License
 
