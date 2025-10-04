@@ -12,6 +12,6 @@
   "author": "KING DAVID",
   "license": "MIT",
   "dependencies": {
-    "flaredb": "github:codetheearth/flaredb"
+    "flaredb": "^1.0.1"
   }
 }
